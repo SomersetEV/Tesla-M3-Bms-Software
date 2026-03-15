@@ -16,196 +16,193 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-#include <stdint.h>
-#include <libopencm3/stm32/usart.h>
-#include <libopencm3/stm32/timer.h>
-#include <libopencm3/stm32/rtc.h>
-#include <libopencm3/stm32/can.h>
-#include <libopencm3/stm32/iwdg.h>
-#include "stm32_can.h"
 #include "canmap.h"
 #include "cansdo.h"
-//#include "canobd2.h"
-#include "terminal.h"
-#include "params.h"
-#include "hwdefs.h"
-#include "digio.h"
-#include "hwinit.h"
+#include "stm32_can.h"
+#include <libopencm3/stm32/can.h>
+#include <libopencm3/stm32/iwdg.h>
+#include <libopencm3/stm32/rtc.h>
+#include <libopencm3/stm32/timer.h>
+#include <libopencm3/stm32/usart.h>
+#include <stdint.h>
+
+// #include "canobd2.h"
+#include "BMSUtil.h"
+#include "isa_shunt.h"
+#include "BatMan.h"
+#include "CAN_Common.h"
+#include "MAXbms.h"
+#include "ModelS.h"
 #include "anain.h"
-#include "param_save.h"
-#include "my_math.h"
+#include "digio.h"
 #include "errormessage.h"
+#include "hwdefs.h"
+#include "hwinit.h"
+#include "my_math.h"
+#include "param_save.h"
+#include "params.h"
 #include "printf.h"
 #include "stm32scheduler.h"
+#include "terminal.h"
 #include "terminalcommands.h"
-#include "BatMan.h"
-#include "ModelS.h"
-#include "CAN_Common.h"
-#include "BMSUtil.h"
-#include "MAXbms.h"
+
 
 #define PRINT_JSON 0
 
-extern "C" void __cxa_pure_virtual()
-{
-    while (1);
+extern "C" void __cxa_pure_virtual() {
+  while (1)
+    ;
 }
 
-static Stm32Scheduler* scheduler;
-static CanHardware* can;
-static CanMap* canMap;
+static Stm32Scheduler *scheduler;
+static CanHardware *can;
+static CanMap *canMap;
 static uint8_t BMStype;
 
-//sample 100ms task
-static void Ms100Task(void)
-{
-    DigIo::led_out.Toggle();
-    iwdg_reset();
-    float cpuLoad = scheduler->GetCpuLoad();
-    Param::SetFloat(Param::cpuload, cpuLoad / 10);
+// sample 100ms task
+static void Ms100Task(void) {
+  DigIo::led_out.Toggle();
+  iwdg_reset();
+  float cpuLoad = scheduler->GetCpuLoad();
+  Param::SetFloat(Param::cpuload, cpuLoad / 10);
 
-//!!! to change to BMS class with selectable types under it to clean up code and simplify interactions//
-    if(BMStype == BMS_M3)
-    {
-        BATMan::loop();
-    }
-    else if(BMStype == BMS_MAX)
-    {
-        MAXbms::Task100Ms();
-    }
-///////////////
-    BMSUtil::UpdateSOC();
-    CAN_Common::Task100Ms();
+  //!!! to change to BMS class with selectable types under it to clean up code
+  //!and simplify interactions//
+  if (BMStype == BMS_M3) {
+    BATMan::loop();
+  } else if (BMStype == BMS_MAX) {
+    MAXbms::Task100Ms();
+  }
+  ///////////////
+  BMSUtil::UpdateSOC();
+  CAN_Common::Task100Ms();
 }
 
-//sample 10 ms task
-static void Ms10Task(void)
-{
-    //Set timestamp of error message
-    ErrorMessage::SetTime(rtc_get_counter_val());
+// sample 10 ms task
+static void Ms10Task(void) {
+  // Set timestamp of error message
+  ErrorMessage::SetTime(rtc_get_counter_val());
 
-//!!! to change to BMS class with selectable types under it to clean up code and simplify interactions//
-    if(BMStype == BMS_M3)
-    {
+  //!!! to change to BMS class with selectable types under it to clean up code
+  //!and simplify interactions//
+  if (BMStype == BMS_M3) {
 
-    }
-    else if(BMStype == BMS_MAX)
-    {
-        MAXbms::Task10Ms();
-    }
-////////////////////////////////
+  } else if (BMStype == BMS_MAX) {
+    MAXbms::Task10Ms();
+  }
+  ////////////////////////////////
+
+  BMSUtil::ProcessUdc();
 }
 
 /** This function is called when the user changes a parameter */
-void Param::Change(Param::PARAM_NUM paramNum)
-{
-    switch (paramNum)
-    {
-    default:
-        //Handle general parameter changes here. Add paramNum labels for handling specific parameters
-        break;
-    }
+void Param::Change(Param::PARAM_NUM paramNum) {
+  switch (paramNum) {
+  default:
+    // Handle general parameter changes here. Add paramNum labels for handling
+    // specific parameters
+    break;
+  }
 }
 
-static void HandleClear()//Must add the ids to be received here as this set the filters.
+static void
+HandleClear() // Must add the ids to be received here as this set the filters.
 {
-    can->RegisterUserMessage(0x100);
-
+  can->RegisterUserMessage(0x100);
+  ISA::RegisterCanMessages(can);
 }
 
 static bool CanCallback(
     uint32_t id, uint32_t data[2],
     uint8_t dlc) // This is where we go when a defined CAN message is received.
 {
-    dlc = dlc;
-    switch (id)
-    {
-    case 0x100:
-        CAN_Common::HandleCan(data);//can also pass the id and dlc if required to do further work downstream.
-        break;
-    default:
+  dlc = dlc;
+  switch (id) {
+  case 0x100:
+    CAN_Common::HandleCan(data); // can also pass the id and dlc if required to
+                                 // do further work downstream.
+    break;
+  case 0x521: case 0x522: case 0x523: case 0x524:
+  case 0x525: case 0x526: case 0x527: case 0x528:
+    ISA::DecodeCAN(id, data);
+    break;
+  default:
 
-        break;
-    }
-    return false;
-
+    break;
+  }
+  return false;
 }
 
-//Whichever timer(s) you use for the scheduler, you have to
-//implement their ISRs here and call into the respective scheduler
-extern "C" void tim2_isr(void)
-{
-    scheduler->Run();
+// Whichever timer(s) you use for the scheduler, you have to
+// implement their ISRs here and call into the respective scheduler
+extern "C" void tim2_isr(void) { scheduler->Run(); }
+
+extern "C" int main(void) {
+  extern const TERM_CMD termCmds[];
+
+  clock_setup(); // Must always come first
+  rtc_setup();
+  ANA_IN_CONFIGURE(ANA_IN_LIST);
+  DIG_IO_CONFIGURE(DIG_IO_LIST);
+  gpio_primary_remap(
+      AFIO_MAPR_SWJ_CFG_JTAG_OFF_SW_ON,
+      AFIO_MAPR_CAN1_REMAP_PORTB); // Remap CAN pins to Portb alt funcs.
+  AnaIn::Start();                  // Starts background ADC conversion via DMA
+  write_bootloader_pininit(); // Instructs boot loader to initialize certain
+                              // pins
+
+  nvic_setup();   // Set up some interrupts
+  parm_load();    // Load stored parameters
+  spi1_setup();   // SPI1 for Model 3 BMB modules
+  usart1_setup(); // Usart 1 for Model S / X slaves
+
+  Stm32Scheduler s(TIM2); // We never exit main so it's ok to put it on stack
+  scheduler = &s;
+
+  // Initialize CAN1, including interrupts. Clock must be enabled in
+  // clock_setup()
+  Stm32Can c(CAN1, CanHardware::Baud500, true);
+  FunctionPointerCallback cb(CanCallback, HandleClear);
+
+  // store a pointer for easier access
+  can = &c;
+  // c.SetNodeId(2);
+  c.AddCallback(&cb);
+  CanMap cm(&c);
+  CanSdo sdo(&c, &cm);
+  TerminalCommands::SetCanMap(&cm);
+  HandleClear();
+  sdo.SetNodeId(2);
+
+  canMap = &cm;
+
+  CAN_Common::SetCan(&c);
+
+  Terminal t(USART3, termCmds);
+  TerminalCommands::SetCanMap(canMap);
+
+  BMStype = Param::GetInt(Param::bmstype); // pull BMS type
+
+  if (BMStype == BMS_M3) {
+    BATMan::BatStart();
+  } else if (BMStype == BMS_MAX) {
+    MAXbms::MaxStart();
+  }
+
+  s.AddTask(Ms10Task, 10);
+  s.AddTask(Ms100Task, 100);
+
+  Param::SetInt(Param::version, 4);
+  Param::Change(
+      Param::PARAM_LAST); // Call callback one for general parameter propagation
+
+  while (1) {
+    char c = 0;
+    t.Run();
+    if (sdo.GetPrintRequest() == PRINT_JSON) {
+      TerminalCommands::PrintParamsJson(&sdo, &c);
+    }
+  }
+
+  return 0;
 }
-
-extern "C" int main(void)
-{
-    extern const TERM_CMD termCmds[];
-
-    clock_setup(); //Must always come first
-    rtc_setup();
-    ANA_IN_CONFIGURE(ANA_IN_LIST);
-    DIG_IO_CONFIGURE(DIG_IO_LIST);
-    gpio_primary_remap(AFIO_MAPR_SWJ_CFG_JTAG_OFF_SW_ON, AFIO_MAPR_CAN1_REMAP_PORTB);//Remap CAN pins to Portb alt funcs.
-    AnaIn::Start(); //Starts background ADC conversion via DMA
-    write_bootloader_pininit(); //Instructs boot loader to initialize certain pins
-
-    nvic_setup(); //Set up some interrupts
-    parm_load(); //Load stored parameters
-    spi1_setup();// SPI1 for Model 3 BMB modules
-    usart1_setup();//Usart 1 for Model S / X slaves
-
-    Stm32Scheduler s(TIM2); //We never exit main so it's ok to put it on stack
-    scheduler = &s;
-
-    //Initialize CAN1, including interrupts. Clock must be enabled in clock_setup()
-    Stm32Can c(CAN1, CanHardware::Baud500,true);
-    FunctionPointerCallback cb(CanCallback, HandleClear);
-
-//store a pointer for easier access
-    can = &c;
-    //c.SetNodeId(2);
-    c.AddCallback(&cb);
-    CanMap cm(&c);
-    CanSdo sdo(&c, &cm);
-    TerminalCommands::SetCanMap(&cm);
-    HandleClear();
-    sdo.SetNodeId(2);
-
-    canMap = &cm;
-
-    CAN_Common::SetCan(&c);
-
-    Terminal t(USART3, termCmds);
-    TerminalCommands::SetCanMap(canMap);
-
-    BMStype = Param::GetInt(Param::bmstype); //pull BMS type
-
-    if(BMStype == BMS_M3)
-    {
-        BATMan::BatStart();
-    }
-    else if(BMStype == BMS_MAX)
-    {
-        MAXbms::MaxStart();
-    }
-
-    s.AddTask(Ms10Task, 10);
-    s.AddTask(Ms100Task, 100);
-
-    Param::SetInt(Param::version, 4);
-    Param::Change(Param::PARAM_LAST); //Call callback one for general parameter propagation
-
-    while(1)
-    {
-        char c = 0;
-        t.Run();
-        if (sdo.GetPrintRequest() == PRINT_JSON)
-        {
-            TerminalCommands::PrintParamsJson(&sdo, &c);
-        }
-    }
-
-    return 0;
-}
-

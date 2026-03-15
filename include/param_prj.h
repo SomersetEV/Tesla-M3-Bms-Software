@@ -47,7 +47,7 @@
    3. Display values
  */
 //Next param id (increase when adding new parameter!): 12
-//Next value Id: 2174
+//Next value Id: 2179
 /*              category     name         unit       min     max     default id */
 #define PARAM_LIST \
     PARAM_ENTRY(CAT_BMS,     bmstype,     TYPES,     0,      2,      0,     1   ) \
@@ -233,6 +233,11 @@
     VALUE_ENTRY(LoopCnt,      "",    2171 ) \
     VALUE_ENTRY(LoopState,    "",    2172 ) \
     VALUE_ENTRY(PecErrCnt,    "",    2173 ) \
+    VALUE_ENTRY(udc2,        "V",    2174 ) \
+    VALUE_ENTRY(udc3,        "V",    2175 ) \
+    VALUE_ENTRY(power,       "kW",   2176 ) \
+    VALUE_ENTRY(KWh,         "kWh",  2177 ) \
+    VALUE_ENTRY(AMPh,        "Ah",   2178 ) \
     VALUE_ENTRY(cpuload,     "%",    2129 )
 
 
