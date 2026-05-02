@@ -295,7 +295,7 @@ void MAXbms::clearBuffers() {
 
     // Param::SetInt(Param::LoopState,7);
 
-    if (watchdogTimer > 100) // Watchdog timer of 10ms
+    if (watchdogTimer > 200) // Watchdog timer scaled for up to 18 slaves
     {
       return;
     }
@@ -344,7 +344,7 @@ void MAXbms::transmitQueue() {
     DigIo::BatCS.Set();
     // Param::SetInt(Param::LoopState,13);
 
-    if (watchdogTimer > 100) // Watchdog timer of 10ms
+    if (watchdogTimer > 200) // Watchdog timer scaled for up to 18 slaves
     {
       // Serial.println("transmitQueue WD timeout");
       return;
@@ -958,7 +958,7 @@ void MAXbms::measureCellData() {
                   true); // Read SCANCTRL to check when data is ready to be read
 
     if (watchdogTimer >
-        150) // Watchdog timer of 15ms !!!TODO check if this works
+        250) // Watchdog timer scaled for up to 18 slaves
     {
       // Serial.println("measureCellData WD timeout");
       return;
