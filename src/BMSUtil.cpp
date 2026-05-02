@@ -27,32 +27,28 @@
 uint16_t voltageToSoc[] = {3300, 3400, 3450, 3500, 3560, 3600,
                            3700, 3800, 4000, 4100, 4200};
 
-uint16_t TempSOC = 0;      // SOC for internal code use
-uint32_t NoCurCounter = 0; //
-uint32_t NoCurRun =
-    20; // 100ms counts before SOC will be determined based on voltage
-float NoCurLim = 1.0; // current limit under which Voltage based
-float asDiff = 0;     // Ampsecond change since last SOC update
-int32_t lastAh = 0;  // ISA::Ah value from previous SOC update
+float SocAccum = 0.0f;  // float accumulator to preserve sub-1% increments
+float asDiff = 0;       // amp-second change since last SOC update
+int32_t lastAh = 0;     // ISA::Ah value from previous SOC update
 
 void BMSUtil::UpdateSOC() {
-  TempSOC = Param::GetInt(Param::soc);
-  asDiff = ISA::Ah - lastAh;
-  lastAh = ISA::Ah;
+  if (Param::GetInt(Param::idcmode) == IDC_ISACAN) {
+    asDiff = ISA::Ah - lastAh;
+    lastAh = ISA::Ah;
 
-  if (ABS(Param::GetFloat(Param::idc)) < NoCurLim) {
-    NoCurCounter++;
+    if (Param::GetFloat(Param::umax) >= Param::GetInt(Param::CellVmax)) {
+      SocAccum = 100.0f;
+    } else {
+      SocAccum += 100.0f * asDiff / (3600.0f * Param::GetInt(Param::nomcap));
+    }
   } else {
-    NoCurCounter = 0;
+    SocAccum = EstimateSocFromVoltage();
   }
 
-  if (NoCurCounter > NoCurRun) {
-    TempSOC = EstimateSocFromVoltage();
-  } else {
-    TempSOC = TempSOC + (100 * asDiff / (3600 * Param::GetInt(Param::nomcap)));
-  }
+  if      (SocAccum > 100.0f) SocAccum = 100.0f;
+  else if (SocAccum <   0.0f) SocAccum = 0.0f;
 
-  Param::SetInt(Param::soc, TempSOC);
+  Param::SetInt(Param::soc, (int)SocAccum);
 }
 
 int BMSUtil::EstimateSocFromVoltage() {
@@ -76,22 +72,49 @@ int BMSUtil::EstimateSocFromVoltage() {
 }
 
 void BMSUtil::UpdateChargeLimits() {
+  float tempMin  = Param::GetFloat(Param::TempMin);
+  float umax     = Param::GetFloat(Param::umax);
+  float cellVmax = Param::GetInt(Param::CellVmax);
+  float maxCur   = Param::GetFloat(Param::maxchargecur);
+  float tempFactor, voltFactor;
+
+  if      (tempMin < -10.0f) tempFactor = 0.0f;
+  else if (tempMin <   0.0f) tempFactor = 0.05f + (tempMin + 10.0f) * 0.005f;
+  else if (tempMin <   5.0f) tempFactor = 0.10f + tempMin            * 0.020f;
+  else if (tempMin <  10.0f) tempFactor = 0.20f + (tempMin -  5.0f) * 0.040f;
+  else if (tempMin <  25.0f) tempFactor = 0.40f + (tempMin - 10.0f) * 0.040f;
+  else if (tempMin <  35.0f) tempFactor = 1.0f;
+  else if (tempMin <  40.0f) tempFactor = 1.0f  - (tempMin - 35.0f) * 0.050f;
+  else if (tempMin <  45.0f) tempFactor = 0.75f - (tempMin - 40.0f) * 0.050f;
+  else if (tempMin <  50.0f) tempFactor = 0.50f - (tempMin - 45.0f) * 0.060f;
+  else                       tempFactor = 0.0f;
+
+  if      (umax >= cellVmax) voltFactor = 0.0f;
+  else if (umax >= 4050.0f)  voltFactor = (cellVmax - umax) / (cellVmax - 4050.0f);
+  else                       voltFactor = 1.0f;
+
+  Param::SetFloat(Param::chargelim, maxCur * tempFactor * voltFactor);
+}
+
+void BMSUtil::UpdateDischargeLimits() {
   float tempMin = Param::GetFloat(Param::TempMin);
-  float maxCur  = Param::GetFloat(Param::maxchargecur);
-  float factor;
+  float tempMax = Param::GetFloat(Param::TempMax);
+  float maxCur  = Param::GetFloat(Param::maxdischargecur);
+  float coldFactor, hotFactor;
 
-  if      (tempMin < -10.0f) factor = 0.0f;
-  else if (tempMin <   0.0f) factor = 0.05f + (tempMin + 10.0f) * 0.005f;
-  else if (tempMin <   5.0f) factor = 0.10f + tempMin            * 0.020f;
-  else if (tempMin <  10.0f) factor = 0.20f + (tempMin -  5.0f) * 0.040f;
-  else if (tempMin <  25.0f) factor = 0.40f + (tempMin - 10.0f) * 0.040f;
-  else if (tempMin <  35.0f) factor = 1.0f;
-  else if (tempMin <  40.0f) factor = 1.0f  - (tempMin - 35.0f) * 0.050f;
-  else if (tempMin <  45.0f) factor = 0.75f - (tempMin - 40.0f) * 0.050f;
-  else if (tempMin <  50.0f) factor = 0.50f - (tempMin - 45.0f) * 0.060f;
-  else                       factor = 0.0f;
+  if      (tempMin < -20.0f) coldFactor = 0.0f;
+  else if (tempMin < -10.0f) coldFactor = 0.15f + (tempMin + 20.0f) * 0.025f;
+  else if (tempMin <   0.0f) coldFactor = 0.40f + (tempMin + 10.0f) * 0.025f;
+  else if (tempMin <   5.0f) coldFactor = 0.65f + tempMin            * 0.070f;
+  else                       coldFactor = 1.0f;
 
-  Param::SetFloat(Param::chargelim, maxCur * factor);
+  if      (tempMax > 60.0f)  hotFactor = 0.0f;
+  else if (tempMax > 55.0f)  hotFactor = 0.25f + (60.0f - tempMax) * 0.050f;
+  else if (tempMax > 50.0f)  hotFactor = 0.50f + (55.0f - tempMax) * 0.050f;
+  else if (tempMax > 45.0f)  hotFactor = 0.75f + (50.0f - tempMax) * 0.050f;
+  else                       hotFactor = 1.0f;
+
+  Param::SetFloat(Param::dischargelim, maxCur * coldFactor * hotFactor);
 }
 
 float BMSUtil::ProcessUdc() {

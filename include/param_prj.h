@@ -46,7 +46,7 @@
    2. Temporary parameters (id = 0)
    3. Display values
  */
-// Next param id (increase when adding new parameter!): 14
+// Next param id (increase when adding new parameter!): 15
 // Next value Id: 2179
 /*              category     name         unit       min     max     default id
  */
@@ -60,6 +60,7 @@
   PARAM_ENTRY(CAT_BMS, CellVmin, "mV", 2800, 3500, 3200, 6)                    \
   PARAM_ENTRY(CAT_BMS, VmInterval, "S", 1.5, 1000, 10, 12)                     \
   PARAM_ENTRY(CAT_BMS, maxchargecur, "A", 0, 200, 100, 13)                     \
+  PARAM_ENTRY(CAT_BMS, maxdischargecur, "A", 0, 1000, 400, 14)                 \
   PARAM_ENTRY(CAT_SENS, idcgain, "dig/A", -1000, 1000, 10, 7)                  \
   PARAM_ENTRY(CAT_SENS, idcofs, "dig", -4095, 4095, 0, 8)                      \
   PARAM_ENTRY(CAT_SENS, idcmode, IDCMODES, 0, 3, 0, 9)                         \
