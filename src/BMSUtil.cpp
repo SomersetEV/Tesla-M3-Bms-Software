@@ -75,6 +75,25 @@ int BMSUtil::EstimateSocFromVoltage() {
   return 100;
 }
 
+void BMSUtil::UpdateChargeLimits() {
+  float tempMin = Param::GetFloat(Param::TempMin);
+  float maxCur  = Param::GetFloat(Param::maxchargecur);
+  float factor;
+
+  if      (tempMin < -10.0f) factor = 0.0f;
+  else if (tempMin <   0.0f) factor = 0.05f + (tempMin + 10.0f) * 0.005f;
+  else if (tempMin <   5.0f) factor = 0.10f + tempMin            * 0.020f;
+  else if (tempMin <  10.0f) factor = 0.20f + (tempMin -  5.0f) * 0.040f;
+  else if (tempMin <  25.0f) factor = 0.40f + (tempMin - 10.0f) * 0.040f;
+  else if (tempMin <  35.0f) factor = 1.0f;
+  else if (tempMin <  40.0f) factor = 1.0f  - (tempMin - 35.0f) * 0.050f;
+  else if (tempMin <  45.0f) factor = 0.75f - (tempMin - 40.0f) * 0.050f;
+  else if (tempMin <  50.0f) factor = 0.50f - (tempMin - 45.0f) * 0.060f;
+  else                       factor = 0.0f;
+
+  Param::SetFloat(Param::chargelim, maxCur * factor);
+}
+
 float BMSUtil::ProcessUdc() {
   float udc = Param::GetFloat(Param::udc);
 

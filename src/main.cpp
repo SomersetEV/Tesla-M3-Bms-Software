@@ -74,6 +74,7 @@ static void Ms100Task(void) {
     MAXbms::Task100Ms();
   }
   ///////////////
+  BMSUtil::UpdateChargeLimits();
   BMSUtil::UpdateSOC();
   CAN_Common::Task100Ms();
 }

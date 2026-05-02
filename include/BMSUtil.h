@@ -31,6 +31,7 @@ public:
     static void UpdateSOC();
     static  int EstimateSocFromVoltage();
     static float ProcessUdc();
+    static void UpdateChargeLimits();
 
 private:
 

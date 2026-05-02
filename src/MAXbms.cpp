@@ -1007,8 +1007,8 @@ void MAXbms::UpdateStats() {
   uint16_t CellMax = 0;
   uint16_t MinVoltTemp = 9000;
   uint16_t CellMin = 0;
-  float MinTempTemp = -90.0;
-  float MaxTempTemp = 390.0;
+  float MinTempTemp = 390.0;
+  float MaxTempTemp = -90.0;
   uint16_t CellCnt = 0;
 
   for (int h = 0; h < numberOfSlaves; h++) // go through all connected slaves
@@ -1039,11 +1039,11 @@ void MAXbms::UpdateStats() {
 
     for (int j = 0; j < numberOfTempsPerSlaveMax; j++) // go through all Temps
     {
-      if (cellBlockTemp[j + (3 * h)] > MinTempTemp) {
+      if (cellBlockTemp[j + (3 * h)] < MinTempTemp) {
         MinTempTemp = cellBlockTemp[j + (3 * h)];
       }
 
-      if (cellBlockTemp[j + (3 * h)] < MaxTempTemp) {
+      if (cellBlockTemp[j + (3 * h)] > MaxTempTemp) {
         MaxTempTemp = cellBlockTemp[j + (3 * h)];
       }
     }
