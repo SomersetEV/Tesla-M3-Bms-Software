@@ -66,13 +66,13 @@ void CAN_Common::StandardCanFrames()//CanHardware* c)
     bytes[0]=temp & 0x00FF;
     bytes[1]=temp >> 8;
 
-    temp = Param::GetFloat(Param::chargelim);
+    temp = Param::GetFloat(Param::chargelim)*10;
 
 
     bytes[2]=temp & 0x00FF;
     bytes[3]=temp >> 8;
 
-    temp = Param::GetFloat(Param::dischargelim);
+    temp = Param::GetFloat(Param::dischargelim)*10;
 
     bytes[4]=temp & 0x00FF;
     bytes[5]=temp >> 8;
