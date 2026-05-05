@@ -21,6 +21,7 @@
  */
 #include "BMSUtil.h"
 #include "isa_shunt.h"
+#include "param_save.h"
 
 // voltage to state of charge                0%    10%   20%   30%   40%   50%
 // 60%   70%   80%   90%   100%
@@ -30,8 +31,21 @@ uint16_t voltageToSoc[] = {3300, 3400, 3450, 3500, 3560, 3600,
 float SocAccum = 0.0f;  // float accumulator to preserve sub-1% increments
 float asDiff = 0;       // amp-second change since last SOC update
 int32_t lastAh = 0;     // ISA::Ah value from previous SOC update
+static bool socInitialized = false;
+static uint32_t socSaveCounter = 0;
+static const uint32_t SOC_SAVE_INTERVAL = 3000; // flush to flash every 5 min (3000 x 100ms)
 
 void BMSUtil::UpdateSOC() {
+  if (!socInitialized) {
+    int savedSoc = Param::GetInt(Param::socSaved);
+    if (savedSoc > 0 && savedSoc <= 100) {
+      SocAccum = (float)savedSoc;
+      Param::SetInt(Param::soc, savedSoc);
+    }
+    lastAh = ISA::Ah;
+    socInitialized = true;
+  }
+
   if (Param::GetInt(Param::idcmode) == IDC_ISACAN) {
     asDiff = ISA::Ah - lastAh;
     lastAh = ISA::Ah;
@@ -49,6 +63,12 @@ void BMSUtil::UpdateSOC() {
   else if (SocAccum <   0.0f) SocAccum = 0.0f;
 
   Param::SetInt(Param::soc, (int)SocAccum);
+  Param::SetInt(Param::socSaved, (int)SocAccum);
+
+  if (++socSaveCounter >= SOC_SAVE_INTERVAL) {
+    socSaveCounter = 0;
+    parm_save();
+  }
 }
 
 int BMSUtil::EstimateSocFromVoltage() {
