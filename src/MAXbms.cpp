@@ -24,6 +24,7 @@ static uint8_t loop = 0;
 static uint8_t loopstate = 0;
 static bool SetupComplete = false;
 static bool InitFailed = false;
+static uint8_t consecutiveFailCount = 0;
 
 // Data
 // Variable declaration
@@ -44,9 +45,26 @@ void MAXbms::MaxStart() {
 void MAXbms::Task10Ms() {}
 
 void MAXbms::Task100Ms() {
-  if (loop == 0 && SetupComplete == true && !InitFailed) {
-    measureCellData();
-    loopstate = 1;
+  if (loop == 0 && SetupComplete == true) {
+    if (!InitFailed) {
+      measureCellData();
+      loopstate = 1;
+      if (dataReady == 0x00) {
+        consecutiveFailCount++;
+      } else {
+        consecutiveFailCount = 0;
+      }
+    }
+
+    if (consecutiveFailCount >= 3 || InitFailed) {
+      consecutiveFailCount = 0;
+      InitFailed = false;
+      daisyChainInit();
+      if (!InitFailed) {
+        setupSlaves();
+      }
+      iwdg_reset();
+    }
   }
 
   if (loop < (Param::GetFloat(Param::VmInterval) * 10)) // 20x100ms
@@ -185,7 +203,7 @@ void MAXbms::daisyChainInit() {
     DigIo::BatCS.Set();
     if (watchdogTimer > 1000) // Watchdog timer of 100ms
     {
-      // Serial.println("UARTSlaveDevicesWakeUp WD timeout");
+      InitFailed = true;
       return;
     }
     watchdogTimer++;
