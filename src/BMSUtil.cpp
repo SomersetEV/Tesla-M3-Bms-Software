@@ -35,6 +35,73 @@ static bool socInitialized = false;
 static uint32_t socSaveCounter = 0;
 static const uint32_t SOC_SAVE_INTERVAL = 3000; // flush to flash every 5 min (3000 x 100ms)
 
+// End-of-charge detection: reset SOC to 100% when charge current tapers off
+// while max cell voltage is within eocmargin of CellVmax. Requires a real
+// charging phase first so a pack merely resting at high voltage never resets.
+enum EocState { EOC_IDLE = 0, EOC_CHARGING, EOC_DONE };
+static EocState eocState = EOC_IDLE;
+static uint8_t eocDebounce = 0;
+static const uint8_t EOC_DEBOUNCE_TICKS = 20; // 2s @ 100ms
+
+// Resting-voltage sanity check on the coulomb counter
+static uint32_t restTicks = 0;
+static bool restCorrected = false;
+static const uint32_t REST_TICKS_REQUIRED = 3000; // 5 min @ 100ms
+
+// idc sign convention: positive = charging (same as ISA::Ah integration)
+static void CheckEndOfCharge(float idc) {
+  float taperA  = Param::GetFloat(Param::eoctaper);
+  float vTarget = Param::GetInt(Param::CellVmax) - Param::GetFloat(Param::eocmargin);
+  float umax    = Param::GetFloat(Param::umax);
+
+  switch (eocState) {
+  case EOC_IDLE:
+    if (idc > taperA) {
+      eocState = EOC_CHARGING;
+      eocDebounce = 0;
+    }
+    break;
+  case EOC_CHARGING:
+    if (idc < -taperA) {
+      eocState = EOC_IDLE; // discharge started, charge session aborted
+    } else if (idc < taperA) {
+      if (umax >= vTarget) {
+        if (++eocDebounce >= EOC_DEBOUNCE_TICKS) {
+          SocAccum = 100.0f;
+          eocState = EOC_DONE;
+          socSaveCounter = SOC_SAVE_INTERVAL; // flush to flash next cycle
+        }
+      } else {
+        eocState = EOC_IDLE; // charge stopped before reaching top voltage
+      }
+    } else {
+      eocDebounce = 0; // still charging hard
+    }
+    break;
+  case EOC_DONE:
+    // latched so the CV tail can't re-fire; re-arm once discharging or relaxed
+    if (idc < -taperA || umax < vTarget)
+      eocState = EOC_IDLE;
+    break;
+  }
+}
+
+static void CheckRestCorrection(float idc) {
+  if (ABS(idc) < Param::GetFloat(Param::restcur)) {
+    if (restTicks < REST_TICKS_REQUIRED) {
+      restTicks++;
+    } else if (!restCorrected) {
+      float vSoc = (float)BMSUtil::EstimateSocFromVoltage();
+      if (ABS(vSoc - SocAccum) > Param::GetFloat(Param::socerr))
+        SocAccum = vSoc; // snap, coulomb counting continues from here
+      restCorrected = true; // at most one correction per rest period
+    }
+  } else {
+    restTicks = 0;
+    restCorrected = false;
+  }
+}
+
 void BMSUtil::UpdateSOC() {
   if (!socInitialized) {
     int savedSoc = Param::GetInt(Param::socSaved);
@@ -50,11 +117,14 @@ void BMSUtil::UpdateSOC() {
     asDiff = ISA::Ah - lastAh;
     lastAh = ISA::Ah;
 
-    if (Param::GetFloat(Param::umax) >= Param::GetInt(Param::CellVmax)) {
-      SocAccum = 100.0f;
-    } else {
-      SocAccum += 100.0f * asDiff / (3600.0f * Param::GetInt(Param::nomcap));
-    }
+    SocAccum += 100.0f * asDiff / (3600.0f * Param::GetInt(Param::nomcap));
+
+    float idc = Param::GetFloat(Param::idc);
+    CheckEndOfCharge(idc);    // may set SocAccum = 100
+    CheckRestCorrection(idc); // may snap SocAccum to voltage estimate
+
+    if (Param::GetFloat(Param::umax) >= Param::GetInt(Param::CellVmax))
+      SocAccum = 100.0f; // exact-top backstop
   } else {
     SocAccum = EstimateSocFromVoltage();
   }
@@ -64,6 +134,8 @@ void BMSUtil::UpdateSOC() {
 
   Param::SetInt(Param::soc, (int)SocAccum);
   Param::SetInt(Param::socSaved, (int)SocAccum);
+  Param::SetInt(Param::socstate,
+                (int)eocState + (restTicks >= REST_TICKS_REQUIRED ? 10 : 0));
 
   if (++socSaveCounter >= SOC_SAVE_INTERVAL) {
     socSaveCounter = 0;
