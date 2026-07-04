@@ -21,6 +21,7 @@ bool firstframe=true;
 
 int32_t ISA::Amperes;
 int32_t ISA::Ah;
+volatile uint32_t ISA::AhFrames = 0;
 int32_t ISA::KW;
 int32_t ISA::KWh;
 int32_t ISA::Voltage=0;
@@ -281,6 +282,7 @@ void ISA::handle527(uint32_t data[2]) //Ampere-Hours
 {
    uint8_t* bytes = (uint8_t*)data;// arrgghhh this converts the two 32bit array into bytes. See comments are useful:)
    Ah = (bytes[5] << 24) | (bytes[4] << 16) | (bytes[3] << 8) | (bytes[2]);
+   AhFrames++;
 }
 
 void ISA::handle528(uint32_t data[2])  //kiloWatt-hours

@@ -60,6 +60,10 @@ public:
     static int32_t KW;
     static int32_t KWh;
     static int32_t Ah;
+    // Number of 0x527 (Ah) frames received since boot. Ah is only meaningful
+    // once this is non-zero; consumers compare against a previous reading to
+    // detect fresh data vs a silent bus.
+    static volatile uint32_t AhFrames;
 
 
 private:
